@@ -1,3 +1,4 @@
+import asyncio # Add asyncio import
 import logging
 import sys
 import os
@@ -34,18 +35,41 @@ from excel_mcp.sheet import (
     unmerge_range,
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler("excel-mcp.log")
-    ],
-    force=True
-)
-
+# Configure the specific logger directly
 logger = logging.getLogger("excel-mcp")
+logger.setLevel(logging.DEBUG) # Set level for this specific logger
+
+# Create formatter
+formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+# Remove existing file handlers if any (to ensure clean state)
+for handler in logger.handlers[:]:
+    if isinstance(handler, logging.FileHandler):
+        logger.removeHandler(handler)
+        handler.close() # Close the file handler
+
+# Create a StreamHandler for stderr
+# Check if a StreamHandler for stderr already exists
+stderr_handler_exists = any(isinstance(h, logging.StreamHandler) and h.stream == sys.stderr for h in logger.handlers)
+
+if not stderr_handler_exists:
+    print("--- Adding StreamHandler for stderr ---", file=sys.stderr) # Debug print
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setFormatter(formatter)
+    logger.addHandler(stderr_handler)
+    # Flushing stderr stream handler is generally not needed but doesn't hurt
+    try:
+        stderr_handler.flush()
+        print("--- Flushed StreamHandler for stderr ---", file=sys.stderr) # Debug print
+    except Exception as flush_err:
+        print(f"--- Error flushing StreamHandler: {flush_err} ---", file=sys.stderr) # Debug print
+
+
+# Ensure logs are not propagated to the root logger if it has handlers,
+# to avoid duplicate messages if the root logger is configured elsewhere.
+# However, since we want Claude to capture stderr, we might need propagation.
+# Let's keep propagation enabled for now.
+logger.propagate = False # Disable propagation to prevent duplicate logs
 
 # Get Excel files path from environment or use default
 EXCEL_FILES_PATH = os.environ.get("EXCEL_FILES_PATH", "./excel_files")
@@ -480,16 +504,44 @@ def validate_excel_range(
         logger.error(f"Error validating range: {e}")
         raise
 
+# Removed heartbeat_logger as it's not needed for stdio debugging path
+
 async def run_server():
     """Run the Excel MCP server."""
+    logger.info(f"Entering run_server function (files directory: {EXCEL_FILES_PATH})")
+    if logger.handlers: # Check if handlers exist before flushing
+        for handler in logger.handlers: handler.flush()
+
     try:
-        logger.info(f"Starting Excel MCP server (files directory: {EXCEL_FILES_PATH})")
-        await mcp.run_sse_async()
+        # Use stdio transport by calling run_stdio_async directly
+        logger.debug("Attempting to run FastMCP server with mcp.run_stdio_async()...")
+        if logger.handlers:
+            for handler in logger.handlers: handler.flush()
+
+        # Directly call the async stdio runner within the existing event loop
+        await mcp.run_stdio_async()
+
+        # This log might not be reached if run_stdio_async runs indefinitely or crashes
+        logger.info("mcp.run_stdio_async() completed or exited normally.")
+        if logger.handlers:
+            for handler in logger.handlers: handler.flush()
     except KeyboardInterrupt:
-        logger.info("Server stopped by user")
+        logger.info("KeyboardInterrupt received, stopping server...")
+        if logger.handlers:
+            for handler in logger.handlers: handler.flush()
+        logger.info("Attempting graceful shutdown...")
+        # Assuming shutdown works similarly for stdio
         await mcp.shutdown()
+        logger.info("Graceful shutdown completed.")
     except Exception as e:
-        logger.error(f"Server failed: {e}")
+        # Use logger.exception to include traceback automatically
+        logger.exception(f"Unhandled exception in run_server: {e}")
+        if logger.handlers:
+            for handler in logger.handlers: handler.flush()
+        # Re-raising here might still terminate if not caught higher up,
+        # but the exception *should* be logged first.
         raise
     finally:
-        logger.info("Server shutdown complete") 
+        logger.info("Exiting run_server function.")
+        if logger.handlers:
+            for handler in logger.handlers: handler.flush()

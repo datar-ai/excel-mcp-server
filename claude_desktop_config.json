@@ -1,0 +1,16 @@
+{
+    "mcpServers": {
+        "excel": {
+          "command": "C:/Python313/python.exe",
+          "args": ["C:/Github/excel-mcp-server/src/excel_mcp/__main__.py"],
+          "cwd": "C:/Github/excel-mcp-server",
+          "transport": "stdio",
+          "env": {
+            "EXCEL_FILES_PATH": "C:/Users/roger/Downloads",
+            "PYTHONPATH": "C:/Github/excel-mcp-server",
+            "PYTHONUSERBASE": "C:/Users/roger/AppData/Roaming/Python",
+            "PATH": "C:/Users/roger/AppData/Roaming/Python/Python313/Scripts;C:/Python313;%PATH%"
+          }
+        }
+    }
+}
